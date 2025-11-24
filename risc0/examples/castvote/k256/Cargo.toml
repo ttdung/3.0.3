@@ -1,0 +1,27 @@
+[package]
+name = "k256-example"
+version = "0.1.0"
+edition = "2021"
+
+default-run = "k256-example"
+
+[dependencies]
+k256 = { version = "0.13", features = ["serde"] }
+k256-methods = { path = "methods" }
+rand_core = "0.9.3"
+risc0-zkvm = { path = "../../../risc0/zkvm" }
+clap = { version = "4", features = ["derive"] }
+
+anyhow = { version = "1.0.75" }
+alloy-sol-types = { version = "1.4.1"}
+hex = { version = "0.4", default-features = false }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+base64 = "0.21"
+sha2 = "0.10" # For hashing the message
+
+[features]
+cuda = ["risc0-zkvm/cuda"]
+default = []
+prove = ["risc0-zkvm/prove"]
