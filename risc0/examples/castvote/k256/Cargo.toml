@@ -24,6 +24,9 @@ sha2 = "0.10" # For hashing the message
 actix-web = "4"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
+utoipa = { version = "4", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "4", features = ["actix-web"] }
+
 [features]
 cuda = ["risc0-zkvm/cuda"]
 default = []

@@ -7,22 +7,33 @@ use risc0_zkvm::{
 };
 use hex;
 
+// New imports for OpenAPI/Swagger
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
+
 use k256_methods::{K256_VERIFY_ELF, K256_VERIFY_ID};
 
 /// Struct for the request body
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToSchema)] // ADD ToSchema
 struct DiscloseRequest {
+    #[schema(example = "8ESn26QBiJrianXg/IATPuCRbfrOZ4jmld3SQKJ+z39ycLDPysVY2ggNkfPDjfSZVBzDzUaES5Uvjnsbeq7leg==")] // Add an example for documentation
     signature: String,
+    #[schema(example = "{\n    \"id\": 123,\n    \"name\": \"Alice Wonderland\",\n    \"age\": 30,\n    \"is_student\": true\n}")]
     data: String,
+    #[schema(example = 12345)]
     poll_id: u64,
 }
 
 /// Struct for the response body, now including the journal_abi_hex
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToSchema)] // ADD ToSchema
 struct DiscloseResponse {
+    #[schema(example = "0xabcdef123...")]
     seal_hex: String,
+    #[schema(example = "0x11223344...")]
     journal_hex: String,
+    #[schema(example = "0xaa55bb66...")]
     journal_abi_hex: String,
+    #[schema(example = "0x8d5c4b...")]
     image_id_hex: String,
 }
 
@@ -96,7 +107,34 @@ fn disclose_logic(signature: &str, data: &str, poll_id: u64) -> Result<DiscloseR
     })
 }
 
+// 2. Define the OpenAPI structure with your API endpoint and schemas
+#[derive(OpenApi)]
+#[openapi(
+    paths(disclose_handler), // List all handler functions here
+    components(schemas(DiscloseRequest, DiscloseResponse)), // List all structs used as request/response bodies
+    info(
+        title = "RISC Zero ZK Prover API",
+        description = "API for generating ZK proofs of K256 signature verification.",
+        version = "1.0.0"
+    ),
+    tags(
+        (name = "risc-zero", description = "RISC Zero ZK Proof Generation Endpoints")
+    )
+)]
+struct ApiDoc;
+
 /// Actix Web handler function for the /api/disclose endpoint
+// 3. Decorate the handler with utoipa::path
+#[utoipa::path(
+    post,
+    path = "/api/disclose",
+    tag = "risc-zero",
+    request_body = DiscloseRequest,
+    responses(
+        (status = 200, description = "ZK Proof generated successfully", body = DiscloseResponse),
+        (status = 500, description = "Failed to generate proof")
+    )
+)]
 #[post("/api/disclose")]
 async fn disclose_handler(req: web::Json<DiscloseRequest>) -> impl Responder {
     println!("\nReceived request for Poll ID: {}", req.poll_id);
@@ -116,17 +154,25 @@ async fn disclose_handler(req: web::Json<DiscloseRequest>) -> impl Responder {
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     
-    // It's highly recommended to compute the Image ID once and verify it here:
+    // Compute the OpenAPI documentation object
+    let openapi = ApiDoc::openapi();
+
     match compute_image_id(K256_VERIFY_ELF) {
         Ok(digest) => println!("RISC-V Image ID (K256_VERIFY_ELF): {}", hex::encode(digest)),
         Err(e) => eprintln!("Warning: Could not compute Image ID: {}", e),
     }
 
     println!("🚀 Starting RISC Zero ZK Prover API server at http://127.0.0.1:3000");
+    println!("📖 Swagger UI documentation available at http://127.0.0.1:3000/swagger-ui/"); // New URL
 
-    HttpServer::new(|| {
+    HttpServer::new(move || {
         App::new()
             .service(disclose_handler)
+            // 4. Add the Swagger UI service
+            .service(
+                SwaggerUi::new("/swagger-ui/{_:.*}")
+                    .url("/api-docs/openapi.json", openapi.clone()),
+            )
     })
     .bind(("127.0.0.1", 3000))?
     .run()
