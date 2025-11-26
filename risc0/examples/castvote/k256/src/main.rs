@@ -10,14 +10,17 @@ use hex;
 // New imports for OpenAPI/Swagger
 use utoipa::{OpenApi, ToSchema};
 use utoipa_swagger_ui::SwaggerUi;
+use base64::{engine::general_purpose, Engine as _};
+use k256::{
+    ecdsa::{signature::Signer, Signature, SigningKey},
+};
+use sha2::{Sha256, Digest};
 
 use k256_methods::{K256_VERIFY_ELF, K256_VERIFY_ID};
 
 /// Struct for the request body
 #[derive(Debug, Deserialize, ToSchema)] // ADD ToSchema
 struct DiscloseRequest {
-    #[schema(example = "8ESn26QBiJrianXg/IATPuCRbfrOZ4jmld3SQKJ+z39ycLDPysVY2ggNkfPDjfSZVBzDzUaES5Uvjnsbeq7leg==")] // Add an example for documentation
-    signature: String,
     #[schema(example = "{\n    \"id\": 123,\n    \"name\": \"Alice Wonderland\",\n    \"age\": 30,\n    \"is_student\": true\n}")]
     data: String,
     #[schema(example = 12345)]
@@ -61,10 +64,36 @@ fn encode_seal(receipt: &risc0_zkvm::Receipt) -> Result<Vec<u8>> {
 }
 
 /// The core disclosure logic to run the ZK Prover and collect outputs
-fn disclose_logic(signature: &str, data: &str, poll_id: u64) -> Result<DiscloseResponse> {
+fn disclose_logic(data: &str, poll_id: u64) -> Result<DiscloseResponse> {
     
+    // Fixed private key for demonstration (Base64 encoded)
+    let exported_private_key_string = "WatoiP9UiA3fqB08TVHjBGniYDXUz/04mAGRLb7tyQY=";
+
+    let message_hash = Sha256::digest(&data); // Hash the message before signing
+
+    println!("\n--- Signing Message ---");
+    
+    // --- NEW: Import Private Key from String ---
+    println!("\n--- Importing Private Key ---");
+    let imported_private_key_bytes_vec = general_purpose::STANDARD.decode(&exported_private_key_string)?;
+
+    // Private keys for secp256k1 are 32 bytes (256 bits).
+    let imported_private_key_array: [u8; 32] = imported_private_key_bytes_vec
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::Error::msg("Failed to convert private key bytes to fixed-size array (expected 32 bytes)"))?;
+    // Create a SigningKey from the raw bytes
+    let imported_signing_key = SigningKey::from_bytes((&imported_private_key_array).into())?;
+    // println!("Imported Signing Key (raw bytes): {:?}", imported_signing_key.to_bytes());
+
+    let signature: Signature = imported_signing_key.sign(&message_hash);
+    // println!("Signature (raw bytes): {:?}", signature.to_bytes());
+
+    // 4. Export Signature to String (Base64)
+    let exported_signature_string = general_purpose::STANDARD.encode(signature.to_bytes());
+
     // The input tuple for the guest program
-    let input = (signature, data, poll_id);
+    let input = (exported_signature_string, data, poll_id);
 
     let env = ExecutorEnv::builder()
         .write(&input)
@@ -138,7 +167,7 @@ struct ApiDoc;
 #[post("/api/disclose")]
 async fn disclose_handler(req: web::Json<DiscloseRequest>) -> impl Responder {
     println!("\nReceived request for Poll ID: {}", req.poll_id);
-    match disclose_logic(&req.signature, &req.data, req.poll_id) {
+    match disclose_logic(&req.data, req.poll_id) {
         Ok(response) => {
             println!("Proof generated successfully.");
             HttpResponse::Ok().json(response)
